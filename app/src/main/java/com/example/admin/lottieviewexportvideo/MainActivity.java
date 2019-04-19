@@ -1,16 +1,26 @@
 package com.example.admin.lottieviewexportvideo;
 
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.graphics.PorterDuff;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.NinePatchDrawable;
+import android.hardware.Camera;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
 import android.os.Environment;
+import android.support.annotation.NonNull;
+import android.support.constraint.ConstraintLayout;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Surface;
+import android.widget.ImageView;
 
 import com.airbnb.lottie.LottieAnimationView;
 import com.airbnb.lottie.LottieComposition;
@@ -18,12 +28,22 @@ import com.airbnb.lottie.LottieDrawable;
 import com.airbnb.lottie.OnCompositionLoadedListener;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.List;
+
+/**
+ * 友情提示，这个方式好像导出带有图片的lottieView还是有一些问题，比如闪烁什么的
+ * 蛋疼疼
+ * 希望有大佬可以给提示一下
+ */
 
 public class MainActivity extends AppCompatActivity {
 
     private LottieAnimationView lottieAnimationView;
+    private ImageView imageView;
+    private ConstraintLayout constraintLayout;
     private LottieDrawable lottieDrawable = new LottieDrawable();
     private final String PATH = Environment.getExternalStorageDirectory().getAbsolutePath();
     private static final boolean VERBOSE = true;
@@ -33,7 +53,7 @@ public class MainActivity extends AppCompatActivity {
     private int HEIGHT = 720;
     private static final int BIT_RATE = 4000000;
     private static final int FRAMES_PER_SECOND = 25;
-    private static final int IFRAME_INTERVAL = 4;
+    private static final int IFRAME_INTERVAL = 2;
     private MediaCodec.BufferInfo mBufferInfo;
     private MediaCodec mEncoder;
     private MediaMuxer mMuxer;
@@ -47,21 +67,44 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        lottieAnimationView = findViewById(R.id.lottieAnimationView);
-        LottieComposition.Factory.fromAssetFileName(this, "clock.json", new OnCompositionLoadedListener() {
-            @Override
-            public void onCompositionLoaded(LottieComposition composition) {
-                lottieDrawable.setComposition(composition);
-                   /*lottieAnimationView.setComposition(composition);
-                   lottieAnimationView.playAnimation();*/
 
-                WIDTH = lottieDrawable.getIntrinsicWidth();
-                HEIGHT = lottieDrawable.getIntrinsicHeight();
-                try {
-                    generateMovie(new File(PATH + "/soft-input-surface.mp4"));
-                } catch (Exception ex) {
-                }
+        //  Camera camera = Camera.open();
+        //  Camera.Parameters parameters = camera.getParameters();
+       /* List<Integer> list  = parameters.getSupportedPreviewFormats();
+        for(int i = 0 ; i < list.size() ; i++){
+            Log.i("MDL","formats:" + list.get(i));
+        }*/
+
+        imageView = findViewById(R.id.imageView);
+        constraintLayout = findViewById(R.id.all);
+        lottieAnimationView = findViewById(R.id.lottieAnimationView);
+        lottieDrawable.setImagesAssetsFolder("images/");
+//        lottieAnimationView.setImageAssetsFolder("images/");
+        LottieComposition.Factory.fromAssetFileName(this, "xiaoYa.json", new OnCompositionLoadedListener() {
+            @Override
+            public void onCompositionLoaded(final LottieComposition composition) {
+                /*lottieAnimationView.setComposition(composition);
+                lottieAnimationView.playAnimation();*/
+
+                new Thread() {
+                    @Override
+                    public void run() {
+                        super.run();
+                        lottieDrawable.setComposition(composition);
+
+                        WIDTH = lottieDrawable.getIntrinsicWidth();
+                        HEIGHT = lottieDrawable.getIntrinsicHeight();
+                        Log.i("MDL", "time1:" + System.currentTimeMillis());
+                        try {
+                            generateMovie(new File(PATH + "/soft-input-surface2.mp4"));//
+                        } catch (Exception ex) {
+                        }
+                        Log.i("MDL", "time2:" + System.currentTimeMillis());
+                    }
+                }.start();
+
             }
+
         });
 
     }
@@ -83,15 +126,43 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public void generateFrame(Drawable lottieDrawable) {
-        drainEncoder(false);
-
-        final Canvas canvas = mInputSurface.lockCanvas(null);
-
+    public void generateFrame(final Drawable lottieDrawable) {
+        // drainEncoder(false);
+        Canvas canvas = mInputSurface.lockCanvas(null);
+        //获得了canvas的时候一定要先清空一下canvas的内容，否则可能会出现前一帧图片重复显示而不消失的情况
+        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
         try {
             lottieDrawable.draw(canvas);
+
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    //这个imageView其实是测试使用的，但是不知道为什么不加这个就会黑屏，可能setImageDrawable里面实现了什么方法
+                    imageView.setImageDrawable(lottieDrawable);
+                }
+            });
         } finally {
             mInputSurface.unlockCanvasAndPost(canvas);
+        }
+    }
+
+    Bitmap drawable2Bitmap(Drawable drawable) {
+        if (drawable instanceof BitmapDrawable) {
+            return ((BitmapDrawable) drawable).getBitmap();
+        } else if (drawable instanceof NinePatchDrawable) {
+            Bitmap bitmap = Bitmap
+                    .createBitmap(
+                            drawable.getIntrinsicWidth(),
+                            drawable.getIntrinsicHeight(),
+                            drawable.getOpacity() != PixelFormat.OPAQUE ? Bitmap.Config.ARGB_8888
+                                    : Bitmap.Config.RGB_565);
+            Canvas canvas = new Canvas(bitmap);
+            drawable.setBounds(0, 0, drawable.getIntrinsicWidth(),
+                    drawable.getIntrinsicHeight());
+            drawable.draw(canvas);
+            return bitmap;
+        } else {
+            return null;
         }
     }
 
@@ -103,7 +174,6 @@ public class MainActivity extends AppCompatActivity {
             if (VERBOSE) Log.d(TAG, "sending EOS to encoder");
             mEncoder.signalEndOfInputStream();
         }
-
         ByteBuffer[] encoderOutputBuffers = mEncoder.getOutputBuffers();
         while (true) {
             int encoderStatus = mEncoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
@@ -196,7 +266,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void prepareEncoder(File outputFile) throws IOException {
         mBufferInfo = new MediaCodec.BufferInfo();
-
         MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, WIDTH, HEIGHT);
 
         // Set some properties.  Failing to specify some of these can cause the MediaCodec
